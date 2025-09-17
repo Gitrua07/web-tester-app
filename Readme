@@ -6,6 +6,10 @@ accessing sys.argv[1].
 In order to see if the webpage supports HTTP/2, it first sends an OPTION request to the server. 
 If it is unable to see if it supports HTTP/2, it will check TLS/ALPN to see if HTTPS uses HTTP/2.
 
+It lists cookies by splitting the Set-Cookie line on the response message. It then splits
+each line separated by ';' and detects when domain and expires exist in the string. 
+It appends it to a string print_cookies which will be printed out by the end of the for-loop.
+
 // leftover code that is saved for later
 s = socket(AF_INET, SOCK_STREAM) #Creates a socket object
 s.connect((URI, 80))
