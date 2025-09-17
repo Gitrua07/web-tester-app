@@ -2,3 +2,15 @@ Assignment 1 for CSC 361
 
 The program accepts URI using the sys library. It gets the command line input by 
 accessing sys.argv[1].
+
+In order to see if the webpage supports HTTP/2, it first sends an OPTION request to the server. 
+If it is unable to see if it supports HTTP/2, it will check TLS/ALPN to see if HTTPS uses HTTP/2.
+
+// leftover code that is saved for later
+s = socket(AF_INET, SOCK_STREAM) #Creates a socket object
+s.connect((URI, 80))
+s.send("GET /index.html HTTP/1.0\n\n")
+data = s.recv(10000)
+s.close()
+
+print("data incoming... \n%s" % data)
