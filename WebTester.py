@@ -1,22 +1,30 @@
 from socket import *
+from urllib.parse import urlparse
 import ssl
 import sys
 
 URI = sys.argv[1]
 PORT = 80
 is_supports_http2 = "no"
-is_password_protected = None
-# Parse uri string here
-# Use uri.split("/") or/and uri.split(".")
-    
-s = socket(AF_INET, SOCK_STREAM)
+is_password_protected = "no"
 
-s.connect((URI, 80))
-s.send("GET /index.html HTTP/1.0\n\n")
+# Parse uri string here
+url_split = urlparse(URI)
+if '/' in URI:
+    HOST = url_split[1]
+    PATH = url_split[2]
+else:
+    HOST = url_split[2]
+    PATH = "/index.html"
+
+s = socket(AF_INET, SOCK_STREAM)
+s.connect((HOST, 80))
+request = f"GET {PATH} HTTP/1.1\n\n"
+s.send(request.encode())
 get_data = s.recv(10000)
 s.close()
-print(get_data)
-get_message = get_data.split('\n')
+#print(get_data.decode())
+get_message = get_data.decode().split('\n')
 
 # Finds all cookies
 cookies = []
@@ -25,18 +33,18 @@ for header in get_message:
         cookies.append(header)
 
 s = socket(AF_INET, SOCK_STREAM)
-s.connect((URI, 80))
-request = "OPTIONS / HTTP/1.1\r\n" 
-request += "Host: {}\r\n".format(URI)
+s.connect((HOST, 80))
+request = f"OPTIONS / HTTP/1.1\r\n" 
+request += f"Host: {HOST}\r\n"
 request += "Connection: keep-alive\r\n"
 request += "Upgrade: h2c\r\n"
 request += "Accept: */*\r\n"
 request += "\r\n"
-s.send(request)
+s.send(request.encode())
 data = s.recv(10000)
 s.close()
 
-response_headers = data.split('\n')
+response_headers = data.decode().split('\n')
 status_line = response_headers[0].split(' ')
 status_code = status_line[1]
 
@@ -45,15 +53,35 @@ if status_code == "200":
 else: # Second approach - if first approach fails
     context = ssl.create_default_context()
     context.set_alpn_protocols(['h2', 'http/1.1'])
-    conn = context.wrap_socket(socket(AF_INET), server_hostname = URI)
-    conn.connect((URI, 443))
+    conn = context.wrap_socket(socket(AF_INET), server_hostname = HOST)
+    conn.connect((HOST, 443))
     negotiated_protocol = conn.selected_alpn_protocol()
     if negotiated_protocol == 'h2':
         is_supports_http2 = "yes"
 
+#Check if webpage is password-protected
+s = socket(AF_INET, SOCK_STREAM)
+s.connect((HOST, 80))
+ip = gethostbyname(HOST)
+request = (
+    f"GET {PATH} HTTP/1.1\r\n"
+    f"Host: {ip}\r\n"
+    "Connection: close\r\n"
+    "\r\n"
+)
+s.send(request.encode())
+data = s.recv(10000)
+s.close()
 
-print("website: %s" % URI)
-print("1. Supports http2: %s" % is_supports_http2)
+response_header_pw = data.decode().split('\n')
+pw_status = response_header_pw[0].split(' ')
+status_num = pw_status[1]
+
+if status_num == "401":
+    is_password_protected = "yes"
+
+print(f"website: {HOST}")
+print(f"1. Supports http2: {is_supports_http2}")
 print("2. List of Cookies:")
 for cookie in cookies:
     print_cookie = ""
@@ -80,4 +108,4 @@ for cookie in cookies:
     
     print(print_cookie)
 
-print("3. Password-protected: %s" % is_password_protected)
+print(f"3. Password-protected: {is_password_protected}")
