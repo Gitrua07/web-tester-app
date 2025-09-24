@@ -3,109 +3,149 @@ from urllib.parse import urlparse
 import ssl
 import sys
 
-URI = sys.argv[1]
-PORT = 80
-is_supports_http2 = "no"
-is_password_protected = "no"
+HTTP_PORT = 80
+HTTPS_PORT = 443
 
+def getHost():
+    uri = sys.argv[1]
+    try:
+        proper_host_name = gethostbyname(uri)
+    except gaierror as e:
+        print(f"Error: Invalid hostname {uri} ")
+        exit(1)
+    
+    url_split = urlparse(uri)
+    if '/' in uri:
+        host = url_split[1]
+        path = url_split[2]
+    else:
+        host = url_split[2]
+        path = "/index.html"
+    
+    return (host, path)
+    
 # Parse uri string here
-url_split = urlparse(URI)
-if '/' in URI:
-    HOST = url_split[1]
-    PATH = url_split[2]
-else:
-    HOST = url_split[2]
-    PATH = "/index.html"
 
-s = socket(AF_INET, SOCK_STREAM)
-s.connect((HOST, 80))
-request = f"GET {PATH} HTTP/1.1\n\n"
-s.send(request.encode())
-get_data = s.recv(10000)
-s.close()
-#print(get_data.decode())
-get_message = get_data.decode().split('\n')
+def getCookies(host, path):
+    s = socket(AF_INET, SOCK_STREAM)
+    s.connect((host, HTTP_PORT))
+    request = f"GET {path} HTTP/1.1\n\n"
+    s.send(request.encode())
+    get_data = s.recv(10000)
+    s.close()
+    print("Find path\n", get_data.decode())
+    get_message = get_data.decode().split('\n')
+    # Finds all cookies
+    cookies = []
+    for header in get_message:
+        if 'Set-Cookie' in header:
+            cookies.append(header)
 
-# Finds all cookies
-cookies = []
-for header in get_message:
-    if 'Set-Cookie' in header:
-        cookies.append(header)
+    s = socket(AF_INET, SOCK_STREAM)
+    s.connect((host, HTTP_PORT))
+    request = f"OPTIONS / HTTP/1.1\r\n" 
+    request += f"Host: {host}\r\n"
+    request += "Connection: keep-alive\r\n"
+    request += "Upgrade: h2c\r\n"
+    request += "Accept: */*\r\n"
+    request += "\r\n"
+    s.send(request.encode())
+    data = s.recv(10000)
+    s.close()
+    response = data.decode()
+    return (response, cookies)
 
-s = socket(AF_INET, SOCK_STREAM)
-s.connect((HOST, 80))
-request = f"OPTIONS / HTTP/1.1\r\n" 
-request += f"Host: {HOST}\r\n"
-request += "Connection: keep-alive\r\n"
-request += "Upgrade: h2c\r\n"
-request += "Accept: */*\r\n"
-request += "\r\n"
-s.send(request.encode())
-data = s.recv(10000)
-s.close()
+#print("Cookies\n", data.decode())
 
-response_headers = data.decode().split('\n')
-status_line = response_headers[0].split(' ')
-status_code = status_line[1]
-
-if status_code == "200":
-    is_supports_http2 = "yes"
-else: # Second approach - if first approach fails
+def getHTTP2Status(host, response):
+    is_supports_http2 = "no"
+    response_headers = response.split('\n')
+    status_line = response_headers[0].split(' ')
+    status_code = status_line[1]
     context = ssl.create_default_context()
     context.set_alpn_protocols(['h2', 'http/1.1'])
-    conn = context.wrap_socket(socket(AF_INET), server_hostname = HOST)
-    conn.connect((HOST, 443))
+    conn = context.wrap_socket(socket(AF_INET), server_hostname = host)
+    conn.connect((host, HTTPS_PORT))
     negotiated_protocol = conn.selected_alpn_protocol()
     if negotiated_protocol == 'h2':
         is_supports_http2 = "yes"
+    conn.close()
+    return is_supports_http2
 
-#Check if webpage is password-protected
-s = socket(AF_INET, SOCK_STREAM)
-s.connect((HOST, 80))
-ip = gethostbyname(HOST)
-request = (
-    f"GET {PATH} HTTP/1.1\r\n"
-    f"Host: {ip}\r\n"
-    "Connection: close\r\n"
-    "\r\n"
-)
-s.send(request.encode())
-data = s.recv(10000)
-s.close()
+def getPasswordProtectedStatus(host, path, response):
+    #Check if webpage is password-protected
+    is_password_protected = "no"
 
-response_header_pw = data.decode().split('\n')
-pw_status = response_header_pw[0].split(' ')
-status_num = pw_status[1]
+    s = socket(AF_INET, SOCK_STREAM)
+    s.connect((host, HTTP_PORT))
+    ip = gethostbyname(host)
+    request = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {ip}\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    )
+    s.send(request.encode())
+    data = s.recv(10000)
+    s.close()
+    response_header_pw = data.decode().split('\n')
+    pw_status = response_header_pw[0].split(' ')
+    status_num = pw_status[1]
 
-if status_num == "401":
-    is_password_protected = "yes"
+    if status_num == "401":
+        is_password_protected = "yes"
 
-print(f"website: {HOST}")
-print(f"1. Supports http2: {is_supports_http2}")
-print("2. List of Cookies:")
-for cookie in cookies:
-    print_cookie = ""
-    cookie_properties = cookie.split(';')
-    cookie_name = 'cookie: '
-    temp = cookie_properties[0].split(' ')
-    cookie_name += temp[1]
-    print_cookie += cookie_name + ", "
+    return is_password_protected
 
-    for property in cookie_properties:
-        if 'expires' in property:
-            cookie_expires = "expires time: "
-            temp = property.split("=")
-            cookie_expires += temp[1]
-            print_cookie += cookie_expires + "; "
+#print("Password protected\n", data.decode())
 
-        if 'domain' in property:
-            cookie_domain = "domain name: www"
-            temp = property.split("=")
-            cookie_domain += temp[1]
-            temp = cookie_domain.split(';')
-            final_cookie_domain = temp[0]
-            print_cookie += final_cookie_domain
+def printHTTPInfo(host, response, cookies, http2_status, password_protected_status):
+    print(f"website: {host}")
+    print(f"1. Supports http2: {http2_status}")
+    print("2. List of Cookies:")
+    for cookie in cookies:
+        print_cookie = ""
+        cookie_properties = cookie.split(';')
+        cookie_name = 'cookie: '
+        temp = cookie_properties[0].split(' ')
+        temp2 = temp[1].split('=')
+        cookie_name += temp2[0]
+        print_cookie += cookie_name + ", "
+
+        for property in cookie_properties:
+            if 'expires' in property:
+                cookie_expires = "expires time: "
+                temp = property.split("=")
+                cookie_expires += temp[1]
+                print_cookie += cookie_expires + "; "
+
+            if 'domain' in property:
+                cookie_domain = "domain name: www"
+                temp = property.split("=")
+                cookie_domain += temp[1]
+                temp = cookie_domain.split(';')
+                final_cookie_domain = temp[0]
+                print_cookie += final_cookie_domain
     
-    print(print_cookie)
+        print(f"{print_cookie}")
 
-print(f"3. Password-protected: {is_password_protected}")
+    print(f"3. Password-protected: {password_protected_status}")
+
+def main():
+    #get and check url
+    host, path = getHost()
+    
+    #get cookies
+    response, cookies = getCookies(host, path)
+    
+    #check and get http/2 status
+    http2_status = getHTTP2Status(host, response)
+    
+    #check and get password-protection status
+    password_protected_status = getPasswordProtectedStatus(host, path, response)
+
+    #print HTTP webpage information
+    printHTTPInfo(host, response, cookies, http2_status, password_protected_status)
+
+if __name__ == "__main__":
+    main()
