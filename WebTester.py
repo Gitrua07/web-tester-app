@@ -6,40 +6,52 @@ import sys
 HTTP_PORT = 80
 HTTPS_PORT = 443
 
-def getHost():
-    uri = sys.argv[1]
-    try:
-        proper_host_name = gethostbyname(uri)
-    except gaierror as e:
-        print(f"Error: Invalid hostname {uri} ")
-        exit(1)
+def getHost(uri):
+    """
+    Error check and get host and path address
+
+    Returns:
+        host: The host address
+        path: The path of the URL
+    """
     
     url_split = urlparse(uri)
-    if '/' in uri:
+    if '/ ' in uri:
+        host = url_split[1]
+        path = url_split[2]
+    elif 'https' in uri:
         host = url_split[1]
         path = url_split[2]
     else:
         host = url_split[2]
         path = "/index.html"
+
+    try:
+        proper_host_name = gethostbyname(host)
+    except gaierror as e:
+        print(f"Error: Invalid hostname {host} ")
+        exit(1)
     
     return (host, path)
     
-# Parse uri string here
-
 def getCookies(host, path):
+    """
+    Finds cookies by using an HTTP protocol
+
+    Args:
+        host: The host address 
+        path: The path of the URL
+    
+    Returns:
+        response: HTTP message headers
+        cookies: String of cookie information
+    """
     s = socket(AF_INET, SOCK_STREAM)
     s.connect((host, HTTP_PORT))
     request = f"GET {path} HTTP/1.1\n\n"
     s.send(request.encode())
     get_data = s.recv(10000)
     s.close()
-    print("Find path\n", get_data.decode())
-    get_message = get_data.decode().split('\n')
-    # Finds all cookies
-    cookies = []
-    for header in get_message:
-        if 'Set-Cookie' in header:
-            cookies.append(header)
 
     s = socket(AF_INET, SOCK_STREAM)
     s.connect((host, HTTP_PORT))
@@ -53,11 +65,41 @@ def getCookies(host, path):
     data = s.recv(10000)
     s.close()
     response = data.decode()
+
+    while '302' in response or '301' in response:
+        temp = response.split('\n')
+        new_host = temp[1].split(': ')[1]
+        host, path = getHost(new_host)
+
+        if 'https' in new_host:
+             context = ssl.create_default_context()
+             conn = context.wrap_socket(socket(AF_INET), server_hostname = host)
+             conn.connect((host, 443))
+             request = f"GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+             conn.send(request.encode())
+             get_data = conn.recv(1024)
+             response = get_data.decode()
+    
+    get_message = get_data.decode().split('\n')
+    cookies = []
+    for header in get_message:
+        if 'Set-Cookie' in header:
+            cookies.append(header)
+
     return (response, cookies)
 
-#print("Cookies\n", data.decode())
-
 def getHTTP2Status(host, response):
+    """
+    Check and print out the http2 compatibility
+
+    Args:
+        host: The host address
+        response: HTTP message headers
+
+    Returns:
+        is_supports_http2: A string of either "yes" or "no" depending
+                           on if the webpage supports http2
+    """
     is_supports_http2 = "no"
     response_headers = response.split('\n')
     status_line = response_headers[0].split(' ')
@@ -67,13 +109,29 @@ def getHTTP2Status(host, response):
     conn = context.wrap_socket(socket(AF_INET), server_hostname = host)
     conn.connect((host, HTTPS_PORT))
     negotiated_protocol = conn.selected_alpn_protocol()
+
+    if 'HTTP2-Settings' in response_headers:
+        is_supports_http2 = "yes"
+
     if negotiated_protocol == 'h2':
         is_supports_http2 = "yes"
+
     conn.close()
     return is_supports_http2
 
 def getPasswordProtectedStatus(host, path, response):
-    #Check if webpage is password-protected
+    """
+    Checks and outputs if the webpage is password protected
+
+    Args:
+        host: The host address
+        path: The path of the URL
+        response: HTTP message headers
+
+    Returns:
+        is_password_protected: Outputs "yes" or "no" depending on whether the
+                               webpage is password-protected
+    """
     is_password_protected = "no"
 
     s = socket(AF_INET, SOCK_STREAM)
@@ -97,9 +155,19 @@ def getPasswordProtectedStatus(host, path, response):
 
     return is_password_protected
 
-#print("Password protected\n", data.decode())
-
 def printHTTPInfo(host, response, cookies, http2_status, password_protected_status):
+    """
+    Prints out webpage HTTP protocol information
+
+    Args:
+        host: The host address
+        response: HTTP message headers
+        cookies: String of cookie information
+        http2_status: A string of either "yes" or "no" depending
+                      on if the webpage supports http2
+        password_protected_status: A string of either "yes" or "no" depending on whether the
+                                   webpage is password-protected
+    """
     print(f"website: {host}")
     print(f"1. Supports http2: {http2_status}")
     print("2. List of Cookies:")
@@ -132,8 +200,9 @@ def printHTTPInfo(host, response, cookies, http2_status, password_protected_stat
     print(f"3. Password-protected: {password_protected_status}")
 
 def main():
+    uri = sys.argv[1]
     #get and check url
-    host, path = getHost()
+    host, path = getHost(uri)
     
     #get cookies
     response, cookies = getCookies(host, path)

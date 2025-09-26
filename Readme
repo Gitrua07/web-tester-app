@@ -15,3 +15,6 @@ It appends it to a string print_cookies which will be printed out by the end of 
 
 For checking to see if the webpage is password-protected, the program connects to host implicitly,
 using the IP address and adding the "Connection: close" to the request sent to the server.
+
+Then once all data is processed and saved into variables, it splits the relevant text from 
+the response line and outputs the information.
