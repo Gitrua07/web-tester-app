@@ -29,11 +29,11 @@ def getHost(uri):
     try:
         proper_host_name = gethostbyname(host)
     except gaierror as e:
-        print(f"Error: Invalid hostname {host} ")
+        print(f"Error: Invalid hostname {uri} ")
         exit(1)
     
     return (host, path)
-    
+
 def getCookies(host, path):
     """
     Finds cookies by using an HTTP protocol
@@ -46,6 +46,8 @@ def getCookies(host, path):
         response: HTTP message headers
         cookies: String of cookie information
     """
+    cookies = []
+
     s = socket(AF_INET, SOCK_STREAM)
     s.connect((host, HTTP_PORT))
     request = f"GET {path} HTTP/1.1\n\n"
@@ -63,8 +65,55 @@ def getCookies(host, path):
     request += "\r\n"
     s.send(request.encode())
     data = s.recv(10000)
-    s.close()
     response = data.decode()
+    s.close()
+
+    get_message = get_data.decode().split('\n')
+    for header in get_message:
+        if 'Set-Cookie' in header and header not in cookies:
+            cookies.append(header)
+
+    if '302' not in response or '301' not in response:
+        try:
+            context = ssl.create_default_context()
+            conn = context.wrap_socket(socket(AF_INET), server_hostname = host)
+            conn.connect((host, HTTPS_PORT))
+            request = f"GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+            conn.send(request.encode())
+            get_data = conn.recv(1024)
+            response = get_data.decode()
+        except ssl.SSLCertVerificationError as e:
+            print(f'SSL Verification Failed - Invalid Host name: {host}')
+            exit(1)
+        except ssl.SSLError as e:
+            print("SSL Error occurred")
+            exit(1)
+
+        while '302' in response or '301' in response:
+            temp = response.split('\n')
+            new_host = temp[1].split(': ')[1]
+            host, path = getHost(new_host)
+
+            if 'https' in new_host:
+                try:
+                    context = ssl.create_default_context()
+                    conn = context.wrap_socket(socket(AF_INET), server_hostname = host)
+                    conn.connect((host, HTTPS_PORT))
+                    request = f"GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+                    conn.send(request.encode())
+                    get_data = conn.recv(1024)
+                    response = get_data.decode()
+                except ssl.SSLCertVerificationError as e:
+                    print(f'SSL Verification Failed - Invalid Host name: {host}')
+                    exit(1)
+                except ssl.SSLError as e:
+                    print("SSL Error occurred")
+                    exit(1)
+        
+        get_message = get_data.decode().split('\n')
+        for header in get_message:
+            if 'Set-Cookie' in header and header not in cookies:
+                cookies.append(header)
 
     while '302' in response or '301' in response:
         temp = response.split('\n')
@@ -72,18 +121,24 @@ def getCookies(host, path):
         host, path = getHost(new_host)
 
         if 'https' in new_host:
-             context = ssl.create_default_context()
-             conn = context.wrap_socket(socket(AF_INET), server_hostname = host)
-             conn.connect((host, 443))
-             request = f"GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
-             conn.send(request.encode())
-             get_data = conn.recv(1024)
-             response = get_data.decode()
-    
+            try:
+                context = ssl.create_default_context()
+                conn = context.wrap_socket(socket(AF_INET), server_hostname = host)
+                conn.connect((host, HTTPS_PORT))
+                request = f"GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+                conn.send(request.encode())
+                get_data = conn.recv(1024)
+                response = get_data.decode()
+            except ssl.SSLCertVerificationError as e:
+                print(f'SSL Verification Failed - Invalid Host name: {host}')
+                exit(1)
+            except ssl.SSLError as e:
+                print("SSL Error occurred")
+                exit(1)
+
     get_message = get_data.decode().split('\n')
-    cookies = []
     for header in get_message:
-        if 'Set-Cookie' in header:
+        if 'Set-Cookie' in header and header not in cookies:
             cookies.append(header)
 
     return (response, cookies)
@@ -104,11 +159,18 @@ def getHTTP2Status(host, response):
     response_headers = response.split('\n')
     status_line = response_headers[0].split(' ')
     status_code = status_line[1]
-    context = ssl.create_default_context()
-    context.set_alpn_protocols(['h2', 'http/1.1'])
-    conn = context.wrap_socket(socket(AF_INET), server_hostname = host)
-    conn.connect((host, HTTPS_PORT))
-    negotiated_protocol = conn.selected_alpn_protocol()
+    try:
+        context = ssl.create_default_context()
+        context.set_alpn_protocols(['h2', 'http/1.1'])
+        conn = context.wrap_socket(socket(AF_INET), server_hostname = host)
+        conn.connect((host, HTTPS_PORT))
+        negotiated_protocol = conn.selected_alpn_protocol()
+    except ssl.SSLCertVerificationError as e:
+        print(f'SSL Verification Failed - Invalid Host name: {host}')
+        exit(1)
+    except ssl.SSLError as e:
+        print("SSL Error occurred")
+        exit(1)
 
     if 'HTTP2-Settings' in response_headers:
         is_supports_http2 = "yes"
