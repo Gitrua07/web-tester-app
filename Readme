@@ -1,5 +1,14 @@
 # Assignment 1 for CSC 361
 
+## How to Compile WebTester.py
+
+To run WebTester.py, on the command line write the following:
+
+``` python3 WebTester.py ** uri ** ```
+
+
+## How WebTester.py Works
+
 The program accepts URI using the sys library. It gets the command line input by 
 accessing sys.argv[1].
 
