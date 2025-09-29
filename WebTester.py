@@ -14,8 +14,8 @@ def getHost(uri):
         host: The host address
         path: The path of the URL
     """
-    
     url_split = urlparse(uri)
+
     if '/ ' in uri:
         host = url_split[1]
         path = url_split[2]
@@ -48,12 +48,17 @@ def getCookies(host, path):
     """
     cookies = []
 
-    s = socket(AF_INET, SOCK_STREAM)
-    s.connect((host, HTTP_PORT))
-    request = f"GET {path} HTTP/1.1\n\n"
-    s.send(request.encode())
-    get_data = s.recv(10000)
-    s.close()
+    try:
+        s = socket(AF_INET, SOCK_STREAM)
+        s.connect((host, HTTP_PORT))
+        request = f"GET {path} HTTP/1.1\n\n"
+        s.send(request.encode())
+        get_data = s.recv(10000)
+        s.close()
+    except ConnectionRefusedError as e:
+        print(f"Error: Invalid hostname {host} ")
+        exit(1)
+        
 
     s = socket(AF_INET, SOCK_STREAM)
     s.connect((host, HTTP_PORT))
@@ -262,7 +267,13 @@ def printHTTPInfo(host, response, cookies, http2_status, password_protected_stat
     print(f"3. Password-protected: {password_protected_status}")
 
 def main():
-    uri = sys.argv[1]
+
+    try:
+        uri = sys.argv[1]
+    except IndexError as e:
+        print(f"Error: Hostname does not exist")
+        exit(1)
+        
     #get and check url
     host, path = getHost(uri)
     
