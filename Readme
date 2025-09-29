@@ -4,7 +4,7 @@
 
 To run WebTester.py, on the command line write the following:
 
-``` python3 WebTester.py ** uri ** ```
+python3 WebTester.py <write a uri here>
 
 
 ## How WebTester.py Works
