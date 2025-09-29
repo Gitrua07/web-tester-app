@@ -12,9 +12,12 @@ If it is unable to see if it supports HTTP/2, it will check TLS/ALPN to see if H
 It lists cookies by splitting the Set-Cookie line on the response message. It then splits
 each line separated by ';' and detects when domain and expires exist in the string. 
 It appends it to a string print_cookies which will be printed out by the end of the for-loop.
+It checks for both the HTTP and the HTTPS cookies. If the response status is either '302' or '301' then
+it will connect to the server again using either TCP or SSL.
 
 For checking to see if the webpage is password-protected, the program connects to host implicitly,
-using the IP address and adding the "Connection: close" to the request sent to the server.
+using the IP address and adding the "Connection: close" to the request sent to the server. It
+checks if the response status is '401' to see if the server is password protected.
 
 Then once all data is processed and saved into variables, it splits the relevant text from 
 the response line and outputs the information.
