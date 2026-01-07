@@ -6,6 +6,7 @@ To run WebTester.py, on the command line write the following:
 
 python3 WebTester.py <write a uri here>
 
+*Created: Sept 2025* 
 
 ## How WebTester.py Works
 
