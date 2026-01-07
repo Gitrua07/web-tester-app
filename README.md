@@ -1,4 +1,4 @@
-# Assignment 1 for CSC 361
+# Web-Tester-App
 
 ## How to Compile WebTester.py
 
